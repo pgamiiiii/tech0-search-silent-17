@@ -130,6 +130,7 @@ with tab_search:
                         st.plotly_chart(
                             plot_radar_chart(row),
                             use_container_width=True,
+                            key=f"radar_{row_id}"           # グラフが重複しないようにキー指定
                         )
 
 # ── スキルマップタブ ───────────────────────────────────────────
