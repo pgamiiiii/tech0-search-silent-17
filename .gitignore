@@ -1,0 +1,22 @@
+# === Environment / Secrets ===
+.env
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+
+# === Virtual environment ===
+.venv/
+venv/
+
+# === Streamlit ===
+.streamlit/secrets.toml
+
+# === OS ===
+.DS_Store
+Thumbs.db
+
+# === Editor ===
+.vscode/
+.idea/
