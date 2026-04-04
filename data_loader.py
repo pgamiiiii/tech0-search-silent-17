@@ -58,13 +58,28 @@ def load_employee_data_from_supabase() -> pd.DataFrame:
     }
     df = df.rename(columns=rename_map)
 
-    # 4. 数値が空（NaN）の場合の補完処理
-    # すでに数値が入っている場合は維持し、入っていない場合はテキストから変換します
-    for col, raw_col in [("専門スキル_数値", "専門スキル"), 
-                         ("コミュニケーション力_数値", "コミュニケーション力"), 
-                         ("リーダーシップ_数値", "リーダーシップ")]:
-        if col not in df.columns or df[col].isnull().any():
+    # 4. 数値が未計算（NaN or 0）の場合の補完処理
+    for col, raw_col in [
+        ("専門スキル_数値", "専門スキル"),
+        ("コミュニケーション力_数値", "コミュニケーション力"),
+        ("リーダーシップ_数値", "リーダーシップ"),
+    ]:
+        # 念のため raw 側の空白や不可視文字を除去（マッチ率改善）
+        if raw_col in df.columns:
+            df[raw_col] = df[raw_col].astype(str).str.strip()
+    
+        # 数値列がない場合は新規作成（ "_数値" の列に再計算結果を上書きする。列は重複しない。）
+        if col not in df.columns:
             df[col] = df[raw_col].map(SKILL_LEVEL_MAP).fillna(0).astype(int)
+            continue
+    
+        # ★ 0 も「未計算」とみなす（マップの数値が全部０になっちゃう対策）
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        needs_fill = df[col].isnull() | (df[col] == 0)
+    
+        if needs_fill.any():
+            mapped = df.loc[needs_fill, raw_col].map(SKILL_LEVEL_MAP)
+            df.loc[needs_fill, col] = mapped
 
     # 経験年数を表示用に加工（数値に"年"を付ける）
     if "経験年数" in df.columns:
