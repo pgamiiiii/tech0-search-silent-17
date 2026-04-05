@@ -81,7 +81,11 @@ with st.sidebar:
 
 
 # ── タブ ──────────────────────────────────────────────────────
-tab_search, tab_map = st.tabs(["👤 従業員検索", "📊 スキルマップ"])
+tab_search, tab_map, tab_knowledge = st.tabs([
+    "👤 従業員検索",
+    "📊 スキルマップ",
+    "🌐 ナレッジ統合"   # ★追加
+])
 
 # ── 従業員検索タブ ─────────────────────────────────────────────
 with tab_search:
@@ -163,3 +167,132 @@ with tab_map:
 
 st.divider()
 st.caption("© 2026 スキルマップアプリ | Powered by Streamlit + plotly")
+# ── ナレッジ統合タブ ───────────────────────────
+# ★新規追加ブロック
+with tab_knowledge:
+    st.subheader("🌐 Purpose＋Right person")
+
+    # ★追加：外部検索用ライブラリ
+    import urllib.request, urllib.parse, re
+
+    # ★追加：GPT要約
+    from gpt_summarizer import summarize_text
+
+    # =========================
+    # 🌍 外部記事取得ロジック
+    # =========================
+    # ★追加
+    def build_search_urls(query):
+        q = urllib.parse.quote(query)
+        return [
+            f"https://note.com/search?q={q}",
+            f"https://itmedia.co.jp/search?q={q}",
+            f"https://qiita.com/search?q={q}"
+        ]
+
+    # ★追加
+    def extract_links(url):
+        try:
+            html = urllib.request.urlopen(url).read().decode("utf-8", errors="ignore")
+            links = re.findall(r'https://[^\s"]+', html)
+            # ★改善：Qiita / Zennに限定
+            return [l for l in links if "qiita.com" in l or "zenn.dev" in l][:5]
+        except:
+            return []
+
+    # ★追加
+    def fetch_text(url):
+        try:
+            html = urllib.request.urlopen(url).read().decode("utf-8", errors="ignore")
+            text = re.sub('<[^<]+?>', '', html)
+            return text[:2000]
+        except:
+            return ""
+
+    # ★追加
+    def get_articles(query):
+        urls = build_search_urls(query)
+        links = []
+        for u in urls:
+            links += extract_links(u)
+
+        docs = []
+        for link in links[:5]:
+            text = fetch_text(link)
+            if len(text) > 200:
+                docs.append(text)
+        return docs
+
+    # =========================
+    # 🔍 入力UI
+    # =========================
+    # ★追加
+    query = st.text_input("例：インターナルブランディング推進チーム")
+
+    # =========================
+    # 🚀 実行ボタン
+    # =========================
+    # ★追加
+    if st.button("統合検索"):
+        with st.spinner("分析中..."):
+
+            # =========================
+            # 🌍 外部知見（要約）
+            # =========================
+            docs = get_articles(query)
+            context = "\n".join(docs[:3])
+
+            summary = summarize_text(f"""
+以下は「{query}」に関する記事です。
+重要なポイントのみ200文字で要約してください。
+
+{context}
+""")
+
+            st.markdown("### 🌍 概要")
+            st.success(summary)
+
+            # =========================
+            # 👥 社員推薦（★修正ポイント）
+            # =========================
+
+            # ★重要：あなたの環境はTF-IDFなのでsmart_searchは使わない
+            vectorizer, tfidf_matrix = get_tfidf_index(df)
+
+            # ★変更：search_employees_tfidfを使用
+            results = search_employees_tfidf(
+                df=df,
+                query=query,
+                vectorizer=vectorizer,
+                tfidf_matrix=tfidf_matrix,
+                department="全部署",
+                top_n=10,
+                score_threshold=0.0,
+            )
+
+            # =========================
+            # 表示
+            # =========================
+            if results.empty:
+                st.info("該当する社員が見つかりませんでした")
+            else:
+                for rank, (_, row) in enumerate(results.iterrows(), start=1):
+                    st.write(f"{rank}位：{row['氏名']}（{row['所属部署']}）")
+
+                    # ★追加：強み表示
+                    strengths = f"{row.get('得意分野①','')} / {row.get('得意分野②','')}"
+                    st.markdown(f"⭐ **強み**：{strengths}")
+
+                    # ★追加：AI推薦理由
+                    reason = summarize_text(f"""
+この社員が「{query}」に適している理由を
+80〜120文字で簡潔に説明してください。
+
+氏名：{row['氏名']}
+部署：{row['所属部署']}
+得意分野：{strengths}
+スキル：{row['専門スキル_数値']}
+""")
+
+                    st.markdown(f"👉 **理由**：{reason}")
+                    st.divider()

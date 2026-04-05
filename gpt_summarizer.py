@@ -59,3 +59,28 @@ def summarize_skill_with_gpt(row) -> str:
         return "（openaiライブラリが未インストールです: pip install openai）"
     except Exception as e:
         return f"（要約取得エラー: {e}）"
+# =========================
+# 🔥 これを一番下に追加
+# =========================
+def summarize_text(text: str) -> str:
+    """
+    任意のテキストを要約・回答生成する（RAG用）
+    """
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "あなたは優秀なコンサルタントです。簡潔に分かりやすく回答してください。"},
+                {"role": "user", "content": text},
+            ],
+            max_tokens=300,
+            temperature=0.5,
+        )
+
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        return f"（要約エラー: {e}）"
