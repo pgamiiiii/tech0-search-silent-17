@@ -274,7 +274,7 @@ with tab_knowledge:
                 st.markdown(
                     f"👉 **推薦理由（簡易）**  \n"
                     f"・得意分野：{strengths}  \n"
-                    f"・スキル値：{row['専門スキル_数値']}"
+                    
                 )
 
                 st.divider()
