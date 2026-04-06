@@ -1,6 +1,41 @@
+import os
 import pandas as pd
 import streamlit as st
+from dotenv import load_dotenv
 from supabase import create_client, Client
+
+# =========================
+# 🔐 ローカル用 .env 読み込み
+# =========================
+load_dotenv()  # Cloud では無害
+
+
+# =========================
+# 🔑 Supabaseキー取得（ローカル + Cloud 両対応）
+# =========================
+def get_supabase_credentials():
+    """
+    Streamlit Cloud → st.secrets を最優先
+    ローカル → .env または OS の環境変数
+    """
+
+    # ① Cloud の secrets
+    if "SUPABASE_URL" in st.secrets and "SUPABASE_KEY" in st.secrets:
+        return st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"]
+
+    # ② ローカルの環境変数（.env で読み込まれる）
+    url = os.getenv("SUPABASE_URL")
+    key = os.getenv("SUPABASE_KEY")
+    if url and key:
+        return url, key
+
+    # ③ どちらも無い場合
+    raise RuntimeError("Supabase の URL または KEY が設定されていません")
+
+
+# =========================
+# 🔢 スキルマッピング辞書
+# =========================
 
 # スキルテキストを数値に変換する辞書
 SKILL_LEVEL_MAP = {
@@ -21,24 +56,25 @@ SKILL_LEVEL_MAP = {
     "組織全体を動かす卓越したリーダーシップを持ち、変革や難局でも力を発揮する": 5,
 }
 
+# =========================
+# 📥 Supabase から従業員データ取得
+# =========================
 def load_employee_data_from_supabase() -> pd.DataFrame:
-    """
-    Supabaseの英語カラム名を日本語名に変換し、前処理済みのDataFrameを返す。
-    """
-    # 1. Supabaseクライアントの初期化
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+    """Supabaseの英語カラム名を日本語名に変換し、前処理済みのDataFrameを返す。"""
+
+    # 1. Supabaseクライアント初期化（ハイブリッド対応）
+    url, key = get_supabase_credentials()
     supabase: Client = create_client(url, key)
 
-    # 2. データの取得
+    # 2. データ取得
     response = supabase.table("employees").select("*").execute()
     df = pd.DataFrame(response.data)
 
     if df.empty:
         return df
 
-    # 3. 🔥 重要：英語の列名を日本語に変換する
-    # 画像のテーブル定義（dept, name等）をapp.pyが探している日本語名に対応させます
+    # 3. 英語 → 日本語の列名変換
+
     rename_map = {
         "name": "氏名",
         "gender": "性別",
