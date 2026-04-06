@@ -120,17 +120,16 @@ with tab_search:
             "🔍 キーワード入力",
             placeholder="例: 労務管理、バックエンド開発、山田",
             label_visibility="collapsed",
+            key="query_input"
         )
 
     with col_btn:
-        # ▼ 検索ボタン（CSSクラスは後でJSで付与）
         do_search = st.button("🔍 検索", key="search_btn", use_container_width=True)
 
         # ▼ 検索ボタンに search-btn クラスを付与（Streamlit DOM対応版）
         st.markdown("""
         <script>
-        const btns = window.parent.document.querySelectorAll('button');
-
+        const btns = window.parent.document.querySelectorAll('button[data-testid="baseButton-button"]');
         btns.forEach(b => {
             const t = b.innerText.replace(/\\s+/g, "");
             if (t.includes("検索")) {
@@ -141,16 +140,16 @@ with tab_search:
         """, unsafe_allow_html=True)
 
     with col_opt:
-        show_radar = st.checkbox("レーダーチャート", value=True)
+        show_radar = st.checkbox("レーダーチャート", value=True, key="radar_opt")
 
-    # ▼ Enter または ボタンで検索実行
+    # ▼ 検索実行判定（Enter or ボタン）
     should_search = do_search or (
         query.strip() != "" and st.session_state.get("last_query") != query
     )
     st.session_state["last_query"] = query
 
+    # ▼ 検索実行
     if should_search:
-        # TF-IDF検索実行
         vectorizer, tfidf_matrix = get_tfidf_index(df)
 
         results = search_employees_tfidf(
@@ -163,42 +162,55 @@ with tab_search:
             score_threshold=0.0,
         )
 
-        st.markdown(f"**📊 検索結果：{len(results)} 件（表示上限: {top_k}）**")
-        st.divider()
+        # 🔥 検索結果を session_state に保存
+        st.session_state["search_results"] = results
 
-        if results.empty:
-            st.info("該当する従業員が見つかりませんでした。")
-        else:
-            for _, row in results.iterrows():
-                card = format_employee_card(row)
-                row_id = row.name
+    # ▼ 検索していない場合は session_state の結果を使う
+    results = st.session_state.get("search_results")
 
-                with st.expander(
-                    f"第{card['rank']}位：{card['name']}（{card['dept']} / {card['age']} / 経験{card['exp']}） [適合度: {card['score']}]"
-                ):
-                    col1, col2 = st.columns([2, 1]) # if show_radar else [1, 0])は、チェックボックス外すとcol2が0になってエラーを起こすからNG。
+    if results is None:
+        st.info("検索結果がありません。")
+        st.stop()
 
-                    with col1:
-                        st.markdown(f"**得意分野：** {card['strengths']}")
-                        st.markdown(f"**不得意：** {card['weaknesses']}")
-                        st.divider()
-                        st.markdown(f"専門スキル　　：{card['skill']}")
-                        st.markdown(f"コミュニケーション力：{card['comm']}")
-                        st.markdown(f"リーダーシップ：{card['leader']}")
+    # ▼ 結果表示
+    st.markdown(f"**📊 検索結果：{len(results)} 件（表示上限: {top_k}）**")
+    st.divider()
 
-                        if st.button("💬 AIスキル要約", key=f"gpt_{row_id}"):
-                            with st.spinner("AIが要約中..."):
-                                from gpt_summarizer import summarize_skill_with_gpt
-                                summary = summarize_skill_with_gpt(row)
-                            st.info(summary)
+    if results.empty:
+        st.info("該当する従業員が見つかりませんでした。")
+    else:
+        for _, row in results.iterrows():
+            card = format_employee_card(row)
+            row_id = row.name
 
-                    with col2:
-                        if show_radar:
-                            st.plotly_chart(
-                                plot_radar_chart(row),
-                                use_container_width=True,
-                                key=f"radar_{row_id}",
-                            )
+            with st.expander(
+                f"第{card['rank']}位：{card['name']}（{card['dept']} / {card['age']} / 経験{card['exp']}） [適合度: {card['score']}]"
+            ):
+                col1, col2 = st.columns([2, 1])
+
+                with col1:
+                    st.markdown(f"**得意分野：** {card['strengths']}")
+                    st.markdown(f"**不得意：** {card['weaknesses']}")
+                    st.divider()
+                    st.markdown(f"専門スキル　　：{card['skill']}")
+                    st.markdown(f"コミュニケーション力：{card['comm']}")
+                    st.markdown(f"リーダーシップ：{card['leader']}")
+
+                    # ▼ AIスキル要約（検索結果が消えない）
+                    if st.button("💬 AIスキル要約", key=f"gpt_{row_id}"):
+                        with st.spinner("AIが要約中..."):
+                            from gpt_summarizer import summarize_skill_with_gpt
+                            summary = summarize_skill_with_gpt(row)
+                        st.info(summary)
+
+                with col2:
+                    if show_radar:
+                        st.plotly_chart(
+                            plot_radar_chart(row),
+                            use_container_width=True,
+                            key=f"radar_{row_id}",
+                        )
+
 
 # ── スキルマップタブ ───────────────────────────────────────────
 with tab_map:

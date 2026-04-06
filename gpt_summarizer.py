@@ -9,12 +9,42 @@ ChatGPT APIを使って従業員のスキルを要約する。
 """
 
 import os
+import streamlit as st
+from dotenv import load_dotenv
+from openai import OpenAI
 
-from dotenv import load_dotenv  #追加　ken
-load_dotenv() #追加　ken
+# =========================
+# 🔐 ローカル用 .env 読み込み
+# =========================
+# （Cloud では .env が無いので無害）
+load_dotenv()
 
+
+# =========================
+# 🔑 APIキー取得（ローカル + Cloud 両対応）
+# =========================
+def get_api_key() -> str:
+    """
+    Streamlit Cloud → st.secrets を最優先
+    ローカル → .env または OS の環境変数
+    """
+    # ① Streamlit Cloud の secrets
+    if "OPENAI_API_KEY" in st.secrets:
+        return st.secrets["OPENAI_API_KEY"]
+
+    # ② ローカルの環境変数（.env で読み込まれる）
+    key = os.getenv("OPENAI_API_KEY")
+    if key:
+        return key
+
+    # ③ どちらも無い場合
+    raise RuntimeError("OPENAI_API_KEY が設定されていません")
+
+
+# =========================
+# 🧠 プロンプト生成
+# =========================
 def build_skill_prompt(row) -> str:
-    """1人分の従業員データからChatGPT用プロンプトを作成する。"""
     return f"""以下の従業員のスキルと特徴を、100文字程度で簡潔に要約してください。
 マネージャーが人材配置の参考にするための、実用的な説明文にしてください。
 
@@ -27,48 +57,39 @@ def build_skill_prompt(row) -> str:
 - コミュニケーション力: {row['コミュニケーション力']}
 - リーダーシップ: {row['リーダーシップ']}
 
-要約（100文字程度）:"""
+要約（100文字程度）:
+"""
 
 
+# =========================
+# ✨ スキル要約（従業員1名）
+# =========================
 def summarize_skill_with_gpt(row) -> str:
-    """
-    ChatGPT APIを使って従業員のスキルを要約する。
-
-    Args:
-        row: 従業員DataFrameの1行
-
-    Returns:
-        AIによるスキル要約文字列
-    """
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        client = OpenAI(api_key=get_api_key())
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "あなたは人事部門のアシスタントです。"},
-                {"role": "user",   "content": build_skill_prompt(row)},
+                {"role": "user", "content": build_skill_prompt(row)},
             ],
             max_tokens=200,
             temperature=0.7,
         )
+
         return response.choices[0].message.content.strip()
 
-    except ImportError:
-        return "（openaiライブラリが未インストールです: pip install openai）"
     except Exception as e:
         return f"（要約取得エラー: {e}）"
+
+
 # =========================
-# 🔥 これを一番下に追加
+# ✨ 任意テキスト要約（RAG用）
 # =========================
 def summarize_text(text: str) -> str:
-    """
-    任意のテキストを要約・回答生成する（RAG用）
-    """
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+        client = OpenAI(api_key=get_api_key())
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
