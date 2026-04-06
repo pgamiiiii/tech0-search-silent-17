@@ -47,8 +47,8 @@ def get_tfidf_index(df_for_index: pd.DataFrame):
 
 
 # ── ヘッダー ──────────────────────────────────────────────────
-st.title("🗺️ スキルマップアプリ")
-st.caption("従業員のスキルを検索・可視化するツール")
+st.title("🗺️🔎 テクゼロンSEARCH")
+st.caption("テクゼロン従業員情報検索・スキル可視化ツール")
 
 # ── サイドバー ────────────────────────────────────────────────
 with st.sidebar:
@@ -84,72 +84,121 @@ with st.sidebar:
 tab_search, tab_map, tab_knowledge = st.tabs([
     "👤 従業員検索",
     "📊 スキルマップ",
-    "🌐 ナレッジ統合"   # ★追加
+    "🌐 AIアシスト検索"   # ★追加
 ])
 
 # ── 従業員検索タブ ─────────────────────────────────────────────
+# ▼ 検索ボタンのCSS（貼るだけ。反映されないかも。）
+st.markdown("""
+<style>
+button.search-btn {
+    background-color: #4285F4 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 20px !important;
+    padding: 0.4em 1.2em !important;
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+    width: 120px !important;
+    height: 2.6em !important;
+    cursor: pointer !important;
+}
+button.search-btn:hover {
+    background-color: #357AE8 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 with tab_search:
     st.subheader("キーワードで従業員を検索")
 
-    col_input, col_opt = st.columns([3, 1])
+    # ▼ 検索窓 + 検索ボタン + レーダー表示
+    col_input, col_btn, col_opt = st.columns([3, 1, 1])
+
     with col_input:
         query = st.text_input(
             "🔍 キーワード入力",
             placeholder="例: 労務管理、バックエンド開発、山田",
             label_visibility="collapsed",
         )
+
+    with col_btn:
+        # ▼ 検索ボタン（CSSクラスは後でJSで付与）
+        do_search = st.button("🔍 検索", key="search_btn", use_container_width=True)
+
+        # ▼ 検索ボタンに search-btn クラスを付与（Streamlit DOM対応版）
+        st.markdown("""
+        <script>
+        const btns = window.parent.document.querySelectorAll('button');
+
+        btns.forEach(b => {
+            const t = b.innerText.replace(/\\s+/g, "");
+            if (t.includes("検索")) {
+                b.classList.add("search-btn");
+            }
+        });
+        </script>
+        """, unsafe_allow_html=True)
+
     with col_opt:
-        show_radar = st.checkbox("レーダーチャートを表示", value=True)
+        show_radar = st.checkbox("レーダーチャート", value=True)
 
-    # TF-IDF検索実行
-    vectorizer, tfidf_matrix = get_tfidf_index(df)
-
-    results = search_employees_tfidf(
-        df=df,
-        query=query,
-        vectorizer=vectorizer,
-        tfidf_matrix=tfidf_matrix,
-        department=selected_dept,   # 部署フィルタは検索関数内で処理
-        top_n=top_k,                # UI負荷回避のため表示上限をここで適用
-        score_threshold=0.0,
+    # ▼ Enter または ボタンで検索実行
+    should_search = do_search or (
+        query.strip() != "" and st.session_state.get("last_query") != query
     )
+    st.session_state["last_query"] = query
 
-    st.markdown(f"**📊 検索結果：{len(results)} 件（表示上限: {top_k}）**")
-    st.divider()
+    if should_search:
+        # TF-IDF検索実行
+        vectorizer, tfidf_matrix = get_tfidf_index(df)
 
-    if results.empty:
-        st.info("該当する従業員が見つかりませんでした。")
-    else:
-        for _, row in results.iterrows():
-            card = format_employee_card(row)
+        results = search_employees_tfidf(
+            df=df,
+            query=query,
+            vectorizer=vectorizer,
+            tfidf_matrix=tfidf_matrix,
+            department=selected_dept,
+            top_n=top_k,
+            score_threshold=0.0,
+        )
 
-            row_id = row.name
-            with st.expander(
-                f"第{card['rank']}位：{card['name']}（{card['dept']} / {card['age']} / 経験{card['exp']}） [適合度: {card['score']}]"
-            ):
-                col1, col2 = st.columns([2, 1]) # if show_radar else [1, 0])は、チェックボックス外すとcol2が0になってエラーを起こすからNG。
+        st.markdown(f"**📊 検索結果：{len(results)} 件（表示上限: {top_k}）**")
+        st.divider()
 
-                with col1:
-                    st.markdown(f"**得意分野：** {card['strengths']}")
-                    st.markdown(f"**不得意：** {card['weaknesses']}")
-                    st.divider()
-                    st.markdown(f"専門スキル　　：{card['skill']}")
-                    st.markdown(f"コミュニケーション力：{card['comm']}")
-                    st.markdown(f"リーダーシップ：{card['leader']}")
+        if results.empty:
+            st.info("該当する従業員が見つかりませんでした。")
+        else:
+            for _, row in results.iterrows():
+                card = format_employee_card(row)
+                row_id = row.name
 
-                    if st.button("💬 AIスキル要約", key=f"gpt_{row_id}"):
-                        with st.spinner("AIが要約中..."):
-                            from gpt_summarizer import summarize_skill_with_gpt
-                            summary = summarize_skill_with_gpt(row)
-                        st.info(summary)
+                with st.expander(
+                    f"第{card['rank']}位：{card['name']}（{card['dept']} / {card['age']} / 経験{card['exp']}） [適合度: {card['score']}]"
+                ):
+                    col1, col2 = st.columns([2, 1]) # if show_radar else [1, 0])は、チェックボックス外すとcol2が0になってエラーを起こすからNG。
 
-                if show_radar:
+                    with col1:
+                        st.markdown(f"**得意分野：** {card['strengths']}")
+                        st.markdown(f"**不得意：** {card['weaknesses']}")
+                        st.divider()
+                        st.markdown(f"専門スキル　　：{card['skill']}")
+                        st.markdown(f"コミュニケーション力：{card['comm']}")
+                        st.markdown(f"リーダーシップ：{card['leader']}")
+
+                        if st.button("💬 AIスキル要約", key=f"gpt_{row_id}"):
+                            with st.spinner("AIが要約中..."):
+                                from gpt_summarizer import summarize_skill_with_gpt
+                                summary = summarize_skill_with_gpt(row)
+                            st.info(summary)
+
                     with col2:
-                        st.plotly_chart(
-                            plot_radar_chart(row),
-                            use_container_width=True,
-                            key=f"radar_{row_id}",
-                        )
+                        if show_radar:
+                            st.plotly_chart(
+                                plot_radar_chart(row),
+                                use_container_width=True,
+                                key=f"radar_{row_id}",
+                            )
 
 # ── スキルマップタブ ───────────────────────────────────────────
 with tab_map:
@@ -166,10 +215,11 @@ with tab_map:
     st.plotly_chart(plot_bubble(df, selected_dept), use_container_width=True)
 
 st.divider()
-st.caption("© 2026 スキルマップアプリ | Powered by Streamlit + plotly")
+st.caption("© 2026 テクゼロンSEARCH | Powered by Streamlit + plotly")
 # ── ナレッジ統合タブ ───────────────────────────
 with tab_knowledge:
     st.subheader("🌐 Purpose＋Right person")
+    st.caption("AI検索アシスト＆適任者推薦（AI Search Assist & Recommendation）")
 
     from gpt_summarizer import summarize_text
 
@@ -205,7 +255,7 @@ with tab_knowledge:
     # =========================
     # 🚀 実行
     # =========================
-    if st.button("統合検索"):
+    if st.button("🔎🧠AIアシスト実行"):
 
         if not query.strip():
             st.warning("キーワードを入力してください")
@@ -270,11 +320,5 @@ with tab_knowledge:
                 strengths = f"{row.get('得意分野①','')} / {row.get('得意分野②','')}"
                 st.markdown(f"⭐ **強み**：{strengths}")
 
-                # ✅ API使わない簡易理由（安定版）
-                st.markdown(
-                    f"👉 **推薦理由（簡易）**  \n"
-                    f"・得意分野：{strengths}  \n"
-                    
-                )
 
                 st.divider()
